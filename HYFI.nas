@@ -1,6 +1,6 @@
 ;+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
 ;+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
-;HyFI v0.13
+;HyFI v0.15
 ;Copiright (c) 2026 $yscall-(Syscall1dev)
 ;More info : By default, HYFI looks for the kernel at address 0x00100000,
 ;exactly one megabyte of memory in 64-bit mode.
@@ -19,6 +19,7 @@ startcli:
     mov ss,ax
     mov sp, 0x7C00
     jmp lol
+    align 4
     gdt:
         dq 0x0000000000000000
         dq 0x00CF9A000000FFFF
@@ -32,18 +33,21 @@ startcli:
      mov eax,cr0
      or eax,1
      mov cr0,eax
-     jmp 0x08:start32
+     jmp dword 0x08:(0x000f0000+(start32-startcli))
 ;=============================
 ;=============================
 ;=============================
 [bits 32]
 start32: 
+   mov al,0x80
+   out 0x70,al
    mov ax,0x10
    mov esp,0x7C00
    mov ds,ax
    mov ss,ax
+   mov es,ax
    mov eax,cr4
-   or eax,0x20
+   or eax,0x30
    mov cr4,eax
    mov eax,cr0
    and eax,0x9FFFFFFF
@@ -61,38 +65,40 @@ start32:
    rdmsr
    or eax,0x800
    wrmsr
-   mov edi,0x80000000
+   mov edi,0x00010000
    xor eax,eax
    mov ecx,0x1000
    rep stosd
-   mov esp,0x8000FFFC
-   mov eax,pm14
+   mov dword [0x00010000],0x00011003
+   mov dword [0x00010004],0x00000000
+   mov dword [0x00011000],0x00012003
+   mov dword [0x00011004],0x00000000
+   mov dword [0x00012000],0x0000009B
+   mov dword [0x00012004],0x00000000
+   mov esp,0x7C00
+   mov eax,0x00010000
    mov cr3,eax
    mov ecx,0xC0000080
    rdmsr
    or eax,0x100
    wrmsr
+   lgdt[0x000F0000+(gdt64_ptr-startcli)]
    mov eax,cr0
    or eax,0x80000000
    mov cr0,eax
-   lgdt[gdt64_ptr]
-   jmp 0x08:long_mode
+   jmp far dword 0x08:(0x000F0000+(long_mode-startcli))
 ;=============================
 ;=============================
 ;=============================
 [bits 64]
 long_mode:
 
-    mov ax, 0x10
+    mov ax,0x10
     mov ds, ax
     mov es, ax
     mov ss, ax
     mov fs, ax
     mov gs, ax
-
-    mov rsp, stack_top
-
- 
     jmp HYFI_MAIN
 align 8
 
@@ -107,22 +113,7 @@ gdt64_end:
 
 gdt64_ptr:
 dw gdt64_end - gdt64 - 1
-dd gdt64
-
-align 4096
-pm14:
-dq pdpt + 0x03
-times 511 dq 0
-
-align 4096
-pdpt:
-dq pd + 0x03
-times 511 dq 0
-
-align 4096
-pd:
-dq 0x00000083
-times 511 dq 0
+dq (0x000f0000+(gdt64-startcli))
 
 align 16
 stack:
@@ -163,17 +154,19 @@ out 0x21,al
 mov al,0xFF
 out 0xA1,al
 ;-------------------
+jmp lol2
 align 16
 idt_table:
 times 256 dq 0, 0
+idt_end:
+    
 align 16
     align 16
 idt_ptr:
 dw idt_end - idt_table - 1
 dq idt_table
-
-idt_end:
-    lea rdi,[rel idt_table]
+lol2:
+lea rdi,[rel idt_table]
 xor rcx, rcx
 .fill_idt:
 lea rax, [rel irq_logic]
@@ -191,12 +184,11 @@ lea rax, [rel irq_logic]
 
     mov byte [rbx+5], 0x8E
 
-    mov word [rbx+6], 0
-
     mov rdx, rax
     shr rdx, 16
-    mov [rbx+8], edx
-
+    mov [rbx+6], dx
+    shr rdx,16
+    mov [rbx+8],edx
     mov dword [rbx+12], 0
 
     inc rcx
@@ -207,7 +199,6 @@ lea rax, [rel irq_logic]
 ;+=+=+=+=+=+=+=+=+=+=+=+=+=+=++=+=+=+=+=+=+=+=+=+=+=+=+=+=+
 ;=+=+=+=+=+=+=+=+=+=+=+=+=+=+==+=+=+=+=+=+=+=+=+=+=+=+=+=+=
 section .data
-video dq 0x0B8000
 shift db 0
 cmd_help db 'help',0
 cmd_x16 db 'real mode',0
@@ -219,17 +210,102 @@ cmd_cls db 'cls',0
 ;-----
 section .bss
 cmd_buf resb 612
-stack1 resb 4096
 ;-----
    section .text
     global _start
 ;===================
-    _start:
-        mov rdi,[video]
-        mov rsi,[cmd_buf]
-        mov cx,[hyfi_buf]
-        mov rsp,stack1 + 4096
+[bits 64]
+    _start:        
+        mov dx,0x3D4
+        mov al,0x11
+        out dx,al
+        inc dx
+        in al,dx
+        and al,0x7F
+        out dx,al
+        dec dx
+        ;mov rsi,[cmd_buf]
+        ;mov cx,[hyfi_buf]
+        ;mov rsp,stack1 + 4096
 ;--------------------
+        mov rax,cr0
+        mov rbx,0x00000000009FFFFFFF
+        and rax,rbx
+        mov cr0,rax
+        
+        mov dx,0x3C4
+        mov al,0x01
+        out dx,al
+        inc dx
+        in al,dx
+        and al,0xFD   
+        out dx,al
+
+        mov dx,0x3C4
+        mov al,0x0A
+        out dx,al
+        inc dx
+        mov al,0x03
+        out dx,al
+        ;----------
+        dec dx
+        mov al,0x04
+        out dx,al
+        inc dx
+        mov al,0x02
+        out dx,al
+
+        mov dx,0x3C2
+        mov al,0x23
+        out dx,al
+        
+        mov dx,0x3D4
+        mov al,0x00
+        out dx,al
+        inc dx
+        mov al,0x5F
+        out dx,al
+        
+        dec dx
+        mov al,0x06
+        out dx,al
+        inc dx
+        mov al,0xBF
+        out dx,al
+        dec dx
+        mov al,0x17
+        out dx,al
+        inc dx
+        mov al,0xA3
+        out dx,al
+
+        mov dx,0x3CE
+        mov al,0x06
+        out dx,al
+        inc dx
+        mov al,0x0C
+        out dx,al
+        
+        mov dx,0x3DA
+        in al,dx
+        mov dx,0x3C0
+        mov al,0x10
+        out dx,al
+        mov al,0x0C
+        out dx,al
+
+        mov dx,0x3DA
+        in al,dx
+        mov dx,0x3C0
+        mov al,0x20
+        out dx,al
+
+        mov dx,0x3DA
+        in al,dx
+
+        mov rax,0x00000000000B8000
+        mov rdi,rax
+;+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
         mov [rdi],byte 'H'
             mov [rdi+1],byte 0x0F
             add rdi,2
@@ -267,12 +343,12 @@ stack1 resb 4096
             mov [rdi+1],byte 0x0F
             add rdi,160
 ;--------------------
-lidt [idt_ptr]
+lea rax,[rel idt_ptr]
+lidt [rax]
 sti
 main:
     hlt
     jmp main
-    jmp $
 ;--------------------
 irq_logic:
     push rax
@@ -603,9 +679,11 @@ call strcmp
 cmp ax,1
 pop rsi
 pop rbx
+jne oll
 mov rsi,cmd_buf
-je help
-
+call help
+ret
+oll:
 push rbx
 push rsi
 mov rbx,cmd_buf
@@ -614,9 +692,10 @@ call strcmp
 cmp ax,1
 pop rsi
 pop rbx
+jne olll
 mov rsi,cmd_buf
-je x16
-
+call x16
+olll:
 push rbx
 push rsi
 mov rbx,cmd_buf
@@ -626,7 +705,7 @@ cmp ax,1
 pop rsi
 pop rbx
 mov rsi,cmd_buf
-je x32
+call x32
 
 push rbx
 push rsi
@@ -637,7 +716,7 @@ cmp ax,1
 pop rsi
 pop rbx
 mov rsi,cmd_buf
-je x64
+call x64
 
 push rbx
 push rsi
@@ -648,7 +727,7 @@ cmp ax,1
 pop rsi
 pop rbx
 mov rsi,cmd_buf
-je launch
+call launch
 
 push rbx
 push rsi
@@ -659,7 +738,7 @@ cmp al,1
 pop rsi
 pop rbx
 mov rsi,cmd_buf
-je cls
+call cls
 ret
 BACKSPACE:
    cmp rdi,0xB8000
@@ -1155,4 +1234,4 @@ starthd:
     dw 0x0000
     dw 0xF000
 TIMES 65536 - ($-$$) db 0 
-;=============================  
+;=============================
