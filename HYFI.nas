@@ -1,6 +1,6 @@
 ;+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
 ;+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
-;HyFI v0.15
+;HyFI v0.16
 ;Copiright (c) 2026 $yscall-(Syscall1dev)
 ;More info : By default, HYFI looks for the kernel at address 0x00100000,
 ;exactly one megabyte of memory in 64-bit mode.
@@ -13,6 +13,18 @@ HYFI:
 [org 0xFFFF0000]
 startcli:
     cli
+    invd
+    mov ecx,0x00000201
+    mov edx,0x00000000
+    mov eax,0xFFFFF800
+    wrmsr
+    mov ecx,0x201
+    mov edx,0x0000000F
+    wrmsr
+    mov ecx,0x2FF
+    rdmsr
+    or eax,0x800
+    wrmsr
     xor ax,ax
     mov ds,ax
     mov es,ax
@@ -39,32 +51,38 @@ startcli:
 ;=============================
 [bits 32]
 start32: 
+
+   mov eax,0x8000083E
+   out 0x0CF8,eax
+   in eax,0xCFC
+   or eax,0x0008
+   out 0x0CFC,eax
+
+   mov eax,0x8000F880
+   out 0x0CF8,eax
+   mov eax,0x00700010
+   out 0x0CFC,eax
+
    mov al,0x80
    out 0x70,al
    mov ax,0x10
-   mov esp,0x7C00
+   mov esp,0x8000FFFF
    mov ds,ax
    mov ss,ax
    mov es,ax
+
+   mov eax,0x8000F804
+   out 0x0CF8,eax
+   in eax,0x0CFC
+   or eax,0x07
+   out 0x0CFC,eax
+
    mov eax,cr4
    or eax,0x30
    mov cr4,eax
    mov eax,cr0
    and eax,0x9FFFFFFF
    mov cr0,eax
-   wbinvd
-   mov ecx,0x200
-   mov edx,0x00000000
-   mov eax,0x80000006
-   wrmsr
-   mov ecx,0x201
-   mov edx,0x0000000F
-   mov eax,0x0FFFF8800
-   wrmsr
-   mov ecx,0x2FF
-   rdmsr
-   or eax,0x800
-   wrmsr
    mov edi,0x00010000
    xor eax,eax
    mov ecx,0x1000
@@ -73,7 +91,7 @@ start32:
    mov dword [0x00010004],0x00000000
    mov dword [0x00011000],0x00012003
    mov dword [0x00011004],0x00000000
-   mov dword [0x00012000],0x0000009B
+   mov dword [0x00012000],0x0000019B
    mov dword [0x00012004],0x00000000
    mov esp,0x7C00
    mov eax,0x00010000
@@ -135,6 +153,25 @@ stack_top:
 HYFI_MAIN:
 [bits 64]
 ;==============================
+mov al,0x80
+mov dx,0x03FB
+out dx,al
+mov dx,0x03F8
+mov al,0x03
+out dx,al
+mov al,0x00
+mov dx,0x03F9
+out dx,al
+mov al,0x03
+mov dx,0x03FB
+out dx,al
+mov dx,0x03FA
+mov al,0xC7
+out dx,al
+mov dx,0x03FC
+mov al,0x0B
+out dx,al
+;==============================
 mov al,0x11
 out 0x20,al
 out 0xA0,al
@@ -149,7 +186,7 @@ out 0xA1,al
 mov al,0x01
 out 0x21,al
 out 0xA1,al
-mov al,0xFD
+mov al,0xF8
 out 0x21,al
 mov al,0xFF
 out 0xA1,al
@@ -164,17 +201,16 @@ align 16
     align 16
 idt_ptr:
 dw idt_end - idt_table - 1
-dq idt_table
+dq (0x000F0000+(idt_table-startcli))
 lol2:
-lea rdi,[rel idt_table]
 xor rcx, rcx
+mov rdi,0x000F2210
+lea rax,[rel irq_logic]
 .fill_idt:
-lea rax, [rel irq_logic]
-
     mov rbx, rdi
-    mov rdx, rcx
-    shl rdx, 4
-    add rbx, rdx
+    mov r8, rcx
+    shl r8, 4
+    add rbx, r8
 
 
     mov [rbx], ax
@@ -187,8 +223,12 @@ lea rax, [rel irq_logic]
     mov rdx, rax
     shr rdx, 16
     mov [rbx+6], dx
-    shr rdx,16
-    mov [rbx+8],edx
+
+mov [rbx+4],byte 0
+
+    mov rdx,rax
+    shr rdx,32
+    mov dword[rbx+8],edx
     mov dword [rbx+12], 0
 
     inc rcx
@@ -205,6 +245,10 @@ cmd_x16 db 'real mode',0
 cmd_x32 db 'protected mode',0
 cmd_x64 db 'long mode',0
 cmd_launch db 'launch',0
+cmd_cullers_on db 'cullers on',0
+cmd_cullers_on1 db 'cullers fifty',0
+cmd_cullers_on2 db 'cullers one hundred',0
+cmd_cullers_off db 'cullers off',0
 hyfi_buf db 0
 cmd_cls db 'cls',0
 ;-----
@@ -212,145 +256,83 @@ section .bss
 cmd_buf resb 612
 ;-----
    section .text
+    jmp _start
+    send_engine:
+            push rdx
+            push rax
+            mov dx,0x03FD
+            .loopwait:
+                in al,dx
+                test al,0x20
+                je .loopwait
+            mov dx,0x03F8
+            pop rax
+            out dx,al
+            pop rdx
+            ret
     global _start
 ;===================
 [bits 64]
-    _start:        
-        mov dx,0x3D4
-        mov al,0x11
-        out dx,al
-        inc dx
-        in al,dx
-        and al,0x7F
-        out dx,al
-        dec dx
-        ;mov rsi,[cmd_buf]
-        ;mov cx,[hyfi_buf]
-        ;mov rsp,stack1 + 4096
-;--------------------
-        mov rax,cr0
-        mov rbx,0x00000000009FFFFFFF
-        and rax,rbx
-        mov cr0,rax
-        
-        mov dx,0x3C4
-        mov al,0x01
-        out dx,al
-        inc dx
-        in al,dx
-        and al,0xFD   
-        out dx,al
-
-        mov dx,0x3C4
-        mov al,0x0A
-        out dx,al
-        inc dx
-        mov al,0x03
-        out dx,al
-        ;----------
-        dec dx
-        mov al,0x04
-        out dx,al
-        inc dx
-        mov al,0x02
-        out dx,al
-
-        mov dx,0x3C2
-        mov al,0x23
-        out dx,al
-        
-        mov dx,0x3D4
-        mov al,0x00
-        out dx,al
-        inc dx
-        mov al,0x5F
-        out dx,al
-        
-        dec dx
-        mov al,0x06
-        out dx,al
-        inc dx
-        mov al,0xBF
-        out dx,al
-        dec dx
-        mov al,0x17
-        out dx,al
-        inc dx
-        mov al,0xA3
-        out dx,al
-
-        mov dx,0x3CE
-        mov al,0x06
-        out dx,al
-        inc dx
-        mov al,0x0C
-        out dx,al
-        
-        mov dx,0x3DA
-        in al,dx
-        mov dx,0x3C0
-        mov al,0x10
-        out dx,al
-        mov al,0x0C
-        out dx,al
-
-        mov dx,0x3DA
-        in al,dx
-        mov dx,0x3C0
-        mov al,0x20
-        out dx,al
-
-        mov dx,0x3DA
-        in al,dx
-
-        mov rax,0x00000000000B8000
-        mov rdi,rax
-;+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
-        mov [rdi],byte 'H'
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-        mov [rdi],byte 'Y'
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-        mov [rdi],byte 'F'
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-        mov [rdi],byte 'I'
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-         mov [rdi],byte ' '
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-        mov [rdi],byte 'V'
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-        mov [rdi],byte ' '
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-        mov [rdi],byte '0'
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-        mov [rdi],byte '.'
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-        mov [rdi],byte '1'
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-        mov [rdi],byte '3'
-            mov [rdi+1],byte 0x0F
-            add rdi,2
-        mov [rdi],byte '/'
-            mov [rdi+1],byte 0x0F
-            add rdi,160
-;--------------------
+    _start:     
 lea rax,[rel idt_ptr]
 lidt [rax]
+        mov rsi,cmd_buf
+        mov cx,[hyfi_buf]
+        ;mov rsp,stack1 + 4096
+;+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
+            mov al,'H'
+            call send_engine
+            mov al,'Y'
+            call send_engine
+            mov al,'F'
+            call send_engine
+            mov al,'I'
+            call send_engine
+            mov al,' '
+            call send_engine
+            mov al,'v'
+            call send_engine
+            mov al,'0'
+            call send_engine
+            mov al,'.'
+            call send_engine
+            mov al,'1'
+            call send_engine
+            mov al,'6'
+            call send_engine
+            mov al,' '
+            call send_engine
+            mov al,'A'
+            call send_engine
+            mov al,'S'
+            call send_engine
+            mov al,'U'
+            call send_engine 
+            mov al,'S'
+            call send_engine
+            mov al,' '
+            call send_engine
+            mov al,'e'
+            call send_engine
+            mov al,'d'
+            call send_engine
+            mov al,'i'
+            call send_engine
+            mov al,'t'
+            call send_engine
+            mov al,'o'
+            call send_engine
+            mov al,'n'
+            call send_engine
+;--------------------
+
 sti
 main:
     hlt
     jmp main
 ;--------------------
 irq_logic:
+    push rbp
     push rax
     push rbx
     push rdi
@@ -366,7 +348,8 @@ irq_logic:
     push r13
     push r14
     push r15
-
+mov al,'$'
+call send_engine
     in al,0x60
     test al,0x80
     jnz .reset
@@ -390,17 +373,10 @@ irq_logic:
     pop rdi
     pop rbx
     pop rax
+    pop rbp
     iretq
 ;--------------------
-        keyboard:
-;--------------------
-cmp rdi,0x0B8000+4000
-jae reset
-mov rax,rsi
-sub rax,cmd_buf
-cmp rax,612
-jae reload
-;--------------------
+keyboard:
 cmp al,0x1E
 je A
 cmp al,0x30
@@ -455,216 +431,162 @@ cmp al,0x15
 je Y
 cmp al,0x2C
 je Z
-;-----
-cmp al,0x0E
-je BACKSPACE
-cmp al,0x2A
-je shiftON
-cmp al,0xAA
-je shiftoff
-;-----
-cmp al,0x02
-je A1
-cmp al,0x03
-je A2
-cmp al,0x04
-je A3
-cmp al,0x05
-je A4
-cmp al,0x06
-je A5
-cmp al,0x07
-je A6
-cmp al,0x08
-je A7
-cmp al,0x09
-je A8
-cmp al,0x0A
-je A9
-cmp al,0x0B
-je A0
 ret
 ;---------------------
 A:
-    mov [rdi],byte 'a'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'a'
+    mov al,'a'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 B:
-    mov [rdi],byte 'b'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'b'
+    mov al,'b'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 C:
-    mov [rdi],byte 'c'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'c'
+    mov al,'c'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 D:
-    mov [rdi],byte 'd'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'd'
+    mov al,'d'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 E:
-    mov [rdi],byte 'e'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'e'
+    mov al,'e'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 F:
-    mov [rdi],byte 'f'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'f'
+    mov al,'f'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 G:
-    mov [rdi],byte 'g'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'g'
+    mov al,'g'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 H:
-    mov [rdi],byte 'h'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'h'
+    mov al,'h'
+    call send_engine
+    mov [rsi],al
     inc rsi
-    ret
+    ret 
 I:
-    mov [rdi],byte 'i'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'i'
+    mov al,'i'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 J:
-    mov [rdi],byte 'j'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'j'
+    mov al,'j'
+    call send_engine
+    mov [rsi],al
     inc rsi
-    ret
+    ret 
 K:
-    mov [rdi],byte 'k'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'k'
+    mov al,'k'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 L:
-    mov [rdi],byte 'l'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'l'
+    mov al,'l'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 M:
-    mov [rdi],byte 'm'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'm'
+    mov al,'m'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 N:
-    mov [rdi],byte 'n'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'n'
+    mov al,'n'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 O:
-    mov [rdi],byte 'o'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'o'
+    mov al,'o'
+    call send_engine
+    mov [rsi],al
     inc rsi
-    ret
-P: 
-    mov [rdi],byte 'p'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'p'
+    ret 
+P:
+    mov al,'p'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 Q:
-    mov [rdi],byte 'q'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'q'
+    mov al,'q'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 R:
-    mov [rdi],byte 'r'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'r'
+    mov al,'r'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 S:
-    mov [rdi],byte 's'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 's'
+    mov al,'s'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 T:
-    mov [rdi],byte 't'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 't'
+    mov al,'t'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 U:
-    mov [rdi],byte 'u'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'u'
+    mov al,'u'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 V:
-    mov [rdi],byte 'v'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'v'
+    mov al,'v'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 W:
-    mov [rdi],byte 'w'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'w'
+    mov al,'w'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 X:
-    mov [rdi],byte 'x'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'x'
+    mov al,'x'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 Y:
-    mov [rdi],byte 'y'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'y'
+    mov al,'y'
+    call send_engine
+    mov [rsi],al
     inc rsi
-    ret
+    ret    
 Z:
-    mov [rdi],byte 'z'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    mov [rsi],byte 'z'
+    mov al,'z'
+    call send_engine
+    mov [rsi],al
     inc rsi
     ret
 ENTE:
@@ -704,9 +626,10 @@ call strcmp
 cmp ax,1
 pop rsi
 pop rbx
+jne ollll
 mov rsi,cmd_buf
 call x32
-
+ollll:
 push rbx
 push rsi
 mov rbx,cmd_buf
@@ -715,9 +638,10 @@ call strcmp
 cmp ax,1
 pop rsi
 pop rbx
+jne olllll
 mov rsi,cmd_buf
 call x64
-
+olllll:
 push rbx
 push rsi
 mov rbx,cmd_buf
@@ -726,9 +650,10 @@ call strcmp
 cmp ax,1
 pop rsi
 pop rbx
+jne ol1
 mov rsi,cmd_buf
 call launch
-
+ol1:
 push rbx
 push rsi
 mov rbx,cmd_buf
@@ -740,142 +665,9 @@ pop rbx
 mov rsi,cmd_buf
 call cls
 ret
-BACKSPACE:
-   cmp rdi,0xB8000
-   jbe main
-   cmp rsi,cmd_buf
-   jbe main
-   sub rdi,2
-   dec rsi
-   mov [rdi],byte ' '
-   mov [rdi+1],byte 0x0F
-   mov [rsi],byte 0
-   ret
-;--------------------
-A1:
-    cmp [shift],byte 1
-    je B1
-    mov [rdi],byte '1'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-A2:
-    cmp [shift],byte 1
-    je B2
-    mov [rdi],byte '2'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-A3:
-    cmp [shift],byte 1
-    je B3
-    mov [rdi],byte '3'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-A4:
-    cmp [shift],byte 1
-    je B4
-    mov [rdi],byte '4'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-A5:
-    cmp [shift],byte 1
-    je B5
-    mov [rdi],byte '5'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-A6:
-    cmp [shift],byte 1
-    je B6
-    mov [rdi],byte '6'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-A7:
-    cmp [shift],byte 1
-    je B7
-    mov [rdi],byte '7'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-A8:
-    cmp [shift],byte 1
-    je B8
-    mov [rdi],byte '8'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-A9:
-    cmp [shift],byte 1
-    je B9
-    mov [rdi],byte '9'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-A0:
-    cmp [shift],byte 1
-    je B0
-    mov [rdi],byte '0'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-;--------------------
-B1:
-    mov [rdi],byte '!'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-B2:
-    mov [rdi],byte '@'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-B3:
-    mov [rdi],byte '#'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-B4:
-    mov [rdi],byte '$'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-B5:
-    mov [rdi],byte '%'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-B6:
-    mov [rdi],byte '^'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-B7:
-    mov [rdi],byte '&'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-B8:
-    mov [rdi],byte '*'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-B9:
-    mov [rdi],byte '('
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
-B0:
-    mov [rdi],byte ')'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-    ret
 ;-------------------------
 reset:
-    mov rdi,0xB8000
+    
     mov rsi,cmd_buf
     ret
 shiftON:       
@@ -890,72 +682,80 @@ reload:
     ret
 ;------------------------
 help:
-    mov [rdi],byte 'H'
-    mov [rdi+1],byte 0x0E
+    
+    ret
+cullers_on:
+    add rdi,160
+    mov [rdi],byte 'c'
+    mov [rdi+1],byte 0x0F
     add rdi,2
 
-    mov [rdi],byte 'e'
-    mov [rdi+1],byte 0x0E
+    mov [rdi],byte 'u'
+    mov [rdi+1],byte 0x0F
     add rdi,2
 
     mov [rdi],byte 'l'
-    mov [rdi+1],byte 0x0E
+    mov [rdi+1],byte 0x0F
     add rdi,2
 
-    mov [rdi],byte 'p'
-    mov [rdi+1],byte 0x0E
-    add rdi,160
-
-    mov [rdi],byte ' '
-    mov [rdi+1],byte 0x0E
+    mov [rdi],byte 'l'
+    mov [rdi+1],byte 0x0F
     add rdi,2
 
-    mov [rdi],byte 'i'
-    mov [rdi+1],byte 0x0E
-    add rdi,2
-
-    mov [rdi],byte 'n'
-    mov [rdi+1],byte 0x0E
-    add rdi,2
-
-    mov [rdi],byte ' '
-    mov [rdi+1],byte 0x0E
-    add rdi,2
-
-    mov [rdi],byte 'H'
-    mov [rdi+1],byte 0x0E
-    add rdi,2
-
-    mov [rdi],byte 'Y'
-    mov [rdi+1],byte 0x0E
-    add rdi,2
-
-    mov [rdi],byte 'F'
-    mov [rdi+1],byte 0x0E
-    add rdi,2
-
-    mov [rdi],byte 'Y'
-    mov [rdi+1],byte 0x0E
-    add rdi,2
-
-    mov [rdi],byte '.'
-    mov [rdi+1],byte 0x0E
-    add rdi,2
-
-    mov [rdi],byte 'o'
-    mov [rdi+1],byte 0x0E
+    mov [rdi],byte 'e'
+    mov [rdi+1],byte 0x0F
     add rdi,2
 
     mov [rdi],byte 'r'
-    mov [rdi+1],byte 0x0E
+    mov [rdi+1],byte 0x0F
     add rdi,2
 
-    mov [rdi],byte 'g'
-    mov [rdi+1],byte 0x0E
+    mov [rdi],byte 's'
+    mov [rdi+1],byte 0x0F
     add rdi,2
-    mov rsi,cmd_buf
-    mov [rsi],byte 0
-    ret
+
+    mov [rdi],byte ' '
+    mov [rdi+1],byte 0x0F
+    add rdi,2
+
+    mov [rdi],byte 'o'
+    mov [rdi+1],byte 0x0F
+    add rdi,2
+
+    mov [rdi],byte 'n'
+    mov [rdi+1],byte 0x0F
+    add rdi,2
+
+    mov [rdi],byte '!'
+    mov [rdi+1],byte 0x0F
+    add rdi,160
+
+    mov dx,0x002E
+    mov al,0x87
+    out dx,al
+    out dx,al
+
+    mov dx,0x002E
+    mov al,0x07
+    out dx,al
+    
+    mov dx,0x002F
+    mov al,0x0B
+    out dx,al
+cullers_30:
+    mov dx,0x002E
+    mov al,0x04
+    out dx,al
+    mov dx,0x002F
+    mov al,0x00
+    out dx,al
+
+    mov dx,0x002E
+    mov al,0x01
+    out dx,al
+    mov dx,0x002F 
+    mov al,0x4C
+
 x16:
     mov [hyfi_buf],byte 1
     add rdi,160
@@ -1134,9 +934,12 @@ x64:
     add rdi,160
     ret
 cls:
-    mov rdi,0xB8000
-    mov rsi,cmd_buf
-    ret
+    lrop:
+        mov [rdi],0x0F20
+        add rdi,2
+        cmp rdi,0x000B8FA0
+        jne lrop
+        ret
 launch:
     cmp byte [hyfi_buf],0
     je none
@@ -1190,27 +993,21 @@ mov ds,ax
 mov es,ax
 mov ss,ax
 jmp 0x00100000
+endola:
+    ret
 launch16bit:
     hlt
     ret
     [bits 64]
 none:
-    add rdi,160
-    mov [rdi],byte 'n'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-
-    mov [rdi],byte 'o'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-
-    mov [rdi],byte 'n'
-    mov [rdi+1],byte 0x0F
-    add rdi,2
-
-    mov [rdi],byte 'e'
-    mov [rdi+1],byte 0x0F
-    add rdi,160
+    mov al,'n'
+    call send_engine
+    mov al,'o'
+    call send_engine
+    mov al,'n'
+    call send_engine
+    mov al,'e'
+    call send_engine
     ret
     [bits 64]
     gdt_gg:
