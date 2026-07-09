@@ -1,22 +1,5 @@
 # HYFI
-                                                                                                                                            
-HHHHHHHHH     HHHHHHHHHYYYYYYY       YYYYYYYFFFFFFFFFFFFFFFFFFFFFFIIIIIIIIII
-H:::::::H     H:::::::HY:::::Y       Y:::::YF::::::::::::::::::::FI::::::::I
-H:::::::H     H:::::::HY:::::Y       Y:::::YF::::::::::::::::::::FI::::::::I
-HH::::::H     H::::::HHY::::::Y     Y::::::YFF::::::FFFFFFFFF::::FII::::::II
-  H:::::H     H:::::H  YYY:::::Y   Y:::::YYY  F:::::F       FFFFFF  I::::I  
-  H:::::H     H:::::H     Y:::::Y Y:::::Y     F:::::F               I::::I  
-  H::::::HHHHH::::::H      Y:::::Y:::::Y      F::::::FFFFFFFFFF     I::::I  
-  H:::::::::::::::::H       Y:::::::::Y       F:::::::::::::::F     I::::I  
-  H:::::::::::::::::H        Y:::::::Y        F:::::::::::::::F     I::::I  
-  H::::::HHHHH::::::H         Y:::::Y         F::::::FFFFFFFFFF     I::::I  
-  H:::::H     H:::::H         Y:::::Y         F:::::F               I::::I  
-  H:::::H     H:::::H         Y:::::Y         F:::::F               I::::I  
-HH::::::H     H::::::HH       Y:::::Y       FF:::::::FF           II::::::II
-H:::::::H     H:::::::H    YYYY:::::YYYY    F::::::::FF           I::::::::I
-H:::::::H     H:::::::H    Y:::::::::::Y    F::::::::FF           I::::::::I
-HHHHHHHHH     HHHHHHHHH    YYYYYYYYYYYYY    FFFFFFFFFFF           IIIIIIIIII
-                                                                            
+                                            
 HYFI is a 64-bit firmware that can roll back from 64-bit to 32 and 16 bits, and also has a command shell
 # Status:
 ![Assembly(Nasm)](https://img.shields.io/badge/Ready-95%25-orange)
