@@ -173,23 +173,42 @@ mov al,0x0B
 out dx,al
 ;==============================
 mov al,0x11
-out 0x20,al
-out 0xA0,al
+mov dx,0x20
+out dx,al
+mov dx,0xA0
+out dx,al
+
 mov al,0x20
-out 0x21,al
+mov dx,0x21
+out dx,al
+
 mov al,0x28
-out 0xA1, al
+mov dx,0xA1
+out dx,al
+
 mov al,0x04
-out 0x21,al
+mov dx,0x21
+out dx,al
 mov al,0x02
-out 0xA1,al
+mov dx,0xA1
+out dx,al
+
 mov al,0x01
-out 0x21,al
-out 0xA1,al
+mov dx,0x21
+out dx,al
+mov dx,0xA1
+out dx,al
+
 mov al,0xF8
-out 0x21,al
+mov dx,0x21
+out dx,al
+
 mov al,0xFF
-out 0xA1,al
+mov dx,0xA1
+out dx,al
+mov dx,0x21
+out dx,al
+
 ;-------------------
 jmp lol2
 align 16
@@ -205,8 +224,9 @@ dq (0x000F0000+(idt_table-startcli))
 lol2:
 xor rcx, rcx
 mov rdi,0x000F2210
-lea rax,[rel irq_logic]
+
 .fill_idt:
+    lea rax,[rel irq_logic]
     mov rbx, rdi
     mov r8, rcx
     shl r8, 4
@@ -348,11 +368,11 @@ irq_logic:
     push r13
     push r14
     push r15
-mov al,'$'
-call send_engine
     in al,0x60
+    mov ax,al
     test al,0x80
     jnz .reset
+    mov al,ax
     call keyboard
 .reset:
     mov al,0x20
@@ -682,7 +702,36 @@ reload:
     ret
 ;------------------------
 help:
-    
+   mov al,'h'
+   call send_engine
+   mov al,'e'
+   call send_engine
+   mov al,'l'
+   call send_engine
+   mov al,'p'
+   call send_engine
+   mov al,' '
+   call send_engine
+   mov al,'i'
+   call send_engine
+   mov al,'n'
+   call send_engine
+   mov al,' '
+   call send_engine
+   mov al,'r'
+   call send_engine
+   mov al,'e'
+   call send_engine
+   mov al,'a'
+   call send_engine
+   mov al,'d'
+   call send_engine
+   mov al,'.'
+   call send_engine
+   mov al,'m'
+   call send_engine
+   mov al,'e'
+   call send_engine
     ret
 cullers_on:
     add rdi,160
