@@ -1,9 +1,11 @@
 # HYFI
                                             
 HYFI is a 64-bit firmware that can roll back from 64-bit to 32 and 16 bits, and also has a command shell
-# Status:
+# Info:
 ![Assembly(Nasm)](https://img.shields.io/badge/Ready-97%25-orange)
 ![Assembly(Nasm)](https://img.shields.io/badge/In-developered-blue)
+![Assembly(Nasm)](https://img.shields.io/badge/Platform-x86--64-blue)
+![Assembly(Nasm)](https://img.shields.io/badge/Matherboard-ASUS--P8H77--M--PRO-blue)
 # More info:
 HYFI supports Intel processors from 2nd to 6th generation, and also has IRQ, IDT, PIC. Well, let's get back to the firmware itself—it boots the processor in the mode the user wants.
 Let's say the user needs to launch a 16-bit PRoS core. For HYFI to hand control over to the core, we need to tell it by writing a command in the "real mode" shell. 
